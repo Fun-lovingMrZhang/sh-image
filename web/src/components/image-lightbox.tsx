@@ -5,12 +5,14 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { downloadSingleImage } from "@/lib/api";
 
 type LightboxImage = {
   id: string;
   src: string;
   sizeLabel?: string;
   dimensions?: string;
+  downloadPath?: string;
 };
 
 type ImageLightboxProps = {
@@ -182,12 +184,23 @@ export function ImageLightbox({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, goPrev, goNext]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     if (!current) return;
-    const link = document.createElement("a");
-    link.href = current.src;
-    link.download = `image-${current.id}.png`;
-    link.click();
+    if (current.downloadPath) {
+      try {
+        await downloadSingleImage(current.downloadPath);
+      } catch {
+        const link = document.createElement("a");
+        link.href = current.src;
+        link.download = `image-${current.id}.png`;
+        link.click();
+      }
+    } else {
+      const link = document.createElement("a");
+      link.href = current.src;
+      link.download = `image-${current.id}.png`;
+      link.click();
+    }
   }, [current]);
 
   const toggleZoom = useCallback(() => {

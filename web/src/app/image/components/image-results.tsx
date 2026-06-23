@@ -12,6 +12,7 @@ export type ImageLightboxItem = {
   src: string;
   sizeLabel?: string;
   dimensions?: string;
+  downloadPath?: string;
 };
 
 type ImageResultsProps = {

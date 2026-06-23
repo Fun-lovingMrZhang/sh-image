@@ -102,6 +102,7 @@ function ImageManagerContent() {
     src: item.url,
     sizeLabel: formatSize(item.size),
     dimensions: item.width && item.height ? `${item.width} x ${item.height}` : undefined,
+    downloadPath: item.rel,
   }));
   const pageSize = 12;
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
