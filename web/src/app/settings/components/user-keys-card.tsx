@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Ban, CheckCircle2, Copy, KeyRound, LoaderCircle, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Ban, CheckCircle2, Copy, KeyRound, LoaderCircle, Pencil, Plus, RotateCcw, Trash2, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createUserKey, deleteUserKey, fetchUserKeys, updateUserKey, type UserKey } from "@/lib/api";
 
 function formatDateTime(value?: string | null) {
@@ -35,6 +36,40 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+function isExpired(expires_at?: string | null) {
+  if (!expires_at) return false;
+  const date = new Date(expires_at);
+  if (Number.isNaN(date.getTime())) return false;
+  return new Date() >= date;
+}
+
+function daysUntilExpiry(expires_at?: string | null): number | null {
+  if (!expires_at) return null;
+  const date = new Date(expires_at);
+  if (Number.isNaN(date.getTime())) return null;
+  const diff = date.getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+function computeExpiresAt(preset: string): string | null {
+  if (!preset || preset === "none") return null;
+  const now = new Date();
+  if (preset === "1d") { now.setDate(now.getDate() + 1); }
+  else if (preset === "3d") { now.setDate(now.getDate() + 3); }
+  else if (preset === "7d") { now.setDate(now.getDate() + 7); }
+  else if (preset === "15d") { now.setDate(now.getDate() + 15); }
+  else if (preset === "30d") { now.setDate(now.getDate() + 30); }
+  else if (preset === "90d") { now.setDate(now.getDate() + 90); }
+  else if (preset === "365d") { now.setDate(now.getDate() + 365); }
+  else return null;
+  return now.toISOString();
+}
+
+function getPresetFromExpiresAt(expires_at?: string | null): string {
+  if (!expires_at) return "none";
+  return "custom";
+}
+
 export function UserKeysCard() {
   const didLoadRef = useRef(false);
   const [items, setItems] = useState<UserKey[]>([]);
@@ -42,6 +77,7 @@ export function UserKeysCard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [createQuota, setCreateQuota] = useState(0);
+  const [createExpiresPreset, setCreateExpiresPreset] = useState("none");
   const [isCreating, setIsCreating] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [revealedKey, setRevealedKey] = useState("");
@@ -50,6 +86,7 @@ export function UserKeysCard() {
   const [editName, setEditName] = useState("");
   const [editKey, setEditKey] = useState("");
   const [editQuota, setEditQuota] = useState(0);
+  const [editExpiresPreset, setEditExpiresPreset] = useState("none");
 
   const load = async () => {
     setIsLoading(true);
@@ -74,11 +111,13 @@ export function UserKeysCard() {
   const handleCreate = async () => {
     setIsCreating(true);
     try {
-      const data = await createUserKey(name.trim(), createQuota);
+      const expiresAt = computeExpiresAt(createExpiresPreset);
+      const data = await createUserKey(name.trim(), createQuota, expiresAt);
       setItems(data.items);
       setRevealedKey(data.key);
       setName("");
       setCreateQuota(0);
+      setCreateExpiresPreset("none");
       setIsDialogOpen(false);
       toast.success("用户密钥已创建");
     } catch (error) {
@@ -136,6 +175,7 @@ export function UserKeysCard() {
     setEditName(item.name);
     setEditKey("");
     setEditQuota(item.quota);
+    setEditExpiresPreset(getPresetFromExpiresAt(item.expires_at));
   };
 
   const handleEdit = async () => {
@@ -146,7 +186,9 @@ export function UserKeysCard() {
     const trimmedName = editName.trim();
     const trimmedKey = editKey.trim();
     const quotaChanged = editQuota !== item.quota;
-    if (trimmedName === item.name && !trimmedKey && !quotaChanged) {
+    const newExpiresAt = editExpiresPreset === "none" ? null : computeExpiresAt(editExpiresPreset);
+    const expiresChanged = newExpiresAt !== item.expires_at;
+    if (trimmedName === item.name && !trimmedKey && !quotaChanged && !expiresChanged) {
       setEditingItem(null);
       return;
     }
@@ -156,11 +198,12 @@ export function UserKeysCard() {
         ...(trimmedName !== item.name ? { name: trimmedName } : {}),
         ...(trimmedKey ? { key: trimmedKey } : {}),
         ...(quotaChanged ? { quota: editQuota } : {}),
+        ...(expiresChanged ? { expires_at: newExpiresAt } : {}),
       });
       setItems(data.items);
       setEditingItem(null);
       setEditKey("");
-      toast.success(quotaChanged ? "额度已更新" : trimmedKey ? "用户密钥已更新" : "用户名称已更新");
+      toast.success(quotaChanged ? "额度已更新" : trimmedKey ? "用户密钥已更新" : expiresChanged ? "过期时间已更新" : "用户名称已更新");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
     } finally {
@@ -248,6 +291,18 @@ export function UserKeysCard() {
                         <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
                           {item.enabled ? "已启用" : "已禁用"}
                         </Badge>
+                        {item.expires_at ? (
+                          isExpired(item.expires_at) ? (
+                            <Badge variant="destructive" className="rounded-md">已过期</Badge>
+                          ) : (
+                            <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 text-amber-700">
+                              <Clock className="mr-1 size-3" />
+                              {daysUntilExpiry(item.expires_at) !== null && daysUntilExpiry(item.expires_at)! <= 3
+                                ? `${daysUntilExpiry(item.expires_at)}天后到期`
+                                : `到期 ${formatDateTime(item.expires_at)}`}
+                            </Badge>
+                          )
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
                         <span>创建时间 {formatDateTime(item.created_at)}</span>
@@ -351,6 +406,27 @@ export function UserKeysCard() {
               设置该密钥可调用 API 的总次数。填 0 表示不限额度，填正整数表示限定次数。
             </p>
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-stone-700">有效期限</label>
+            <Select value={createExpiresPreset} onValueChange={setCreateExpiresPreset}>
+              <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
+                <SelectValue placeholder="永不过期" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">永不过期</SelectItem>
+                <SelectItem value="1d">1 天</SelectItem>
+                <SelectItem value="3d">3 天</SelectItem>
+                <SelectItem value="7d">7 天（周卡）</SelectItem>
+                <SelectItem value="15d">15 天</SelectItem>
+                <SelectItem value="30d">30 天（月卡）</SelectItem>
+                <SelectItem value="90d">90 天（季卡）</SelectItem>
+                <SelectItem value="365d">365 天（年卡）</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs leading-5 text-stone-500">
+              密钥到期后将自动失效，无法继续调用接口。
+            </p>
+          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -443,6 +519,29 @@ export function UserKeysCard() {
               />
               <p className="text-xs leading-5 text-stone-500">
                 填 0 表示不限额度。当前已用 {editingItem?.used ?? 0} 次。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-stone-700">有效期限</label>
+              <Select value={editExpiresPreset} onValueChange={setEditExpiresPreset}>
+                <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
+                  <SelectValue placeholder="永不过期" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">永不过期</SelectItem>
+                  <SelectItem value="1d">1 天</SelectItem>
+                  <SelectItem value="3d">3 天</SelectItem>
+                  <SelectItem value="7d">7 天（周卡）</SelectItem>
+                  <SelectItem value="15d">15 天</SelectItem>
+                  <SelectItem value="30d">30 天（月卡）</SelectItem>
+                  <SelectItem value="90d">90 天（季卡）</SelectItem>
+                  <SelectItem value="365d">365 天（年卡）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-5 text-stone-500">
+                {editingItem?.expires_at
+                  ? `当前到期时间：${formatDateTime(editingItem.expires_at)}`
+                  : "当前设置为永不过期"}
               </p>
             </div>
             <div className="space-y-2">

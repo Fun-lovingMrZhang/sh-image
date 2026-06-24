@@ -50,6 +50,7 @@ class AuthService:
         name = self._clean(raw.get("name")) or self._default_name(role)
         created_at = self._clean(raw.get("created_at")) or _now_iso()
         last_used_at = self._clean(raw.get("last_used_at")) or None
+        expires_at = self._clean(raw.get("expires_at")) or None
         quota = max(0, int(raw.get("quota") or 0))
         used = max(0, int(raw.get("used") or 0))
         return {
@@ -60,6 +61,7 @@ class AuthService:
             "enabled": bool(raw.get("enabled", True)),
             "created_at": created_at,
             "last_used_at": last_used_at,
+            "expires_at": expires_at,
             "quota": quota,
             "used": used,
         }
@@ -88,6 +90,7 @@ class AuthService:
             "enabled": bool(item.get("enabled", True)),
             "created_at": item.get("created_at"),
             "last_used_at": item.get("last_used_at"),
+            "expires_at": item.get("expires_at"),
             "quota": int(item.get("quota") or 0),
             "used": int(item.get("used") or 0),
         }
@@ -153,7 +156,7 @@ class AuthService:
             raise ValueError("这个名称已经在使用中了，换一个更容易区分的名称吧")
         return candidate
 
-    def create_key(self, *, role: AuthRole, name: str = "", quota: int = 0) -> tuple[dict[str, object], str]:
+    def create_key(self, *, role: AuthRole, name: str = "", quota: int = 0, expires_at: str | None = None) -> tuple[dict[str, object], str]:
         with self._lock:
             self._reload_locked()
             normalized_name = self._build_name_locked(name, role=role)
@@ -164,6 +167,7 @@ class AuthService:
                     break
                 except ValueError:
                     continue
+            normalized_expires = self._clean(expires_at) or None
             item = {
                 "id": uuid.uuid4().hex[:12],
                 "name": normalized_name,
@@ -172,6 +176,7 @@ class AuthService:
                 "enabled": True,
                 "created_at": _now_iso(),
                 "last_used_at": None,
+                "expires_at": normalized_expires,
                 "quota": max(0, quota),
                 "used": 0,
             }
@@ -212,6 +217,8 @@ class AuthService:
                     next_item["quota"] = max(0, int(updates.get("quota") or 0))
                 if "reset_usage" in updates and updates.get("reset_usage"):
                     next_item["used"] = 0
+                if "expires_at" in updates:
+                    next_item["expires_at"] = self._clean(updates.get("expires_at")) or None
                 self._items[index] = next_item
                 self._save()
                 return self._public_item(next_item)
@@ -246,6 +253,17 @@ class AuthService:
                 stored_hash = self._clean(item.get("key_hash"))
                 if not stored_hash or not hmac.compare_digest(stored_hash, candidate_hash):
                     continue
+                # 检查是否已过期
+                expires_at = self._clean(item.get("expires_at"))
+                if expires_at:
+                    try:
+                        exp_dt = datetime.fromisoformat(expires_at)
+                        if exp_dt.tzinfo is None:
+                            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                        if datetime.now(timezone.utc) >= exp_dt:
+                            return None
+                    except (ValueError, TypeError):
+                        pass
                 next_item = dict(item)
                 now = datetime.now(timezone.utc)
                 next_item["last_used_at"] = now.isoformat()
