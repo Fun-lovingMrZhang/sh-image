@@ -1,7 +1,11 @@
-<h1 align="center">ChatGPT2API</h1>
+<h1 align="center">SH-image 万图生</h1>
 
+<p align="center">基于 ChatGPT 图片生成/编辑能力的 OpenAI 兼容图片 API 代理，集成在线画图工作台、号池管理、认证密钥配额系统、WARP/FlareSolverr 稳定代理与 Docker 自托管部署。</p>
 
-<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
+<p align="center">
+  <a href="https://github.com/Fun-lovingMrZhang/sh-image/releases"><img src="https://img.shields.io/github/v/release/Fun-lovingMrZhang/sh-image" alt="Release"></a>
+  <a href="https://github.com/Fun-lovingMrZhang/sh-image/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Fun-lovingMrZhang/sh-image" alt="License"></a>
+</p>
 
 > [!WARNING]
 > 免责声明：
@@ -15,20 +19,28 @@
 > - 使用本项目即视为你已充分理解并同意本免责声明全部内容；如因滥用、违规或违法使用造成任何后果，均由使用者自行承担。
 > - 本项目基于对 ChatGPT 官网相关能力的逆向研究实现，存在账号受限、临时封禁或永久封禁的风险。请勿使用你自己的重要账号、常用账号或高价值账号进行测试。
 
+## ✨ 特色功能
+
+- 🔑 **认证密钥配额系统** — 为每个 API Key 设置独立的调用配额，前端实时显示剩余额度
+- 🌐 **WARP / FlareSolverr 稳定代理** — 内置 Cloudflare 清障方案，解决注册和图片链路的拦截问题
+- 🖼️ **在线画图工作台** — 内置 Web 界面，支持文生图、图片编辑与多图组图编辑
+- 👥 **号池管理** — 自动注册、轮询、刷新、剔除无效账号
+- 🐳 **Docker 一键部署** — 开箱即用，支持 WARP 代理模式和本地开发模式
+
 ## 快速开始
 
-### Docker 运行
+### Docker 部署（推荐）
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
-cd chatgpt2api
+git clone https://github.com/Fun-lovingMrZhang/sh-image.git
+cd sh-image
 docker compose up -d
 ```
 
 启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
 
-- Web 面板：`http://localhost:3000`
-- API 地址：`http://localhost:3000/v1`
+- Web 面板：`http://localhost:3020`
+- API 地址：`http://localhost:3020/v1`
 - 数据目录：`./data`
 
 ### WARP / FlareSolverr 稳定代理部署
@@ -37,6 +49,7 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+# 编辑 .env，设置 CHATGPT2API_PORT 和 CHATGPT2API_AUTH_KEY
 docker compose -f docker-compose.warp.yml up -d --build
 ```
 
@@ -46,19 +59,19 @@ docker compose -f docker-compose.warp.yml up -d --build
 - `privoxy`：把 WARP SOCKS5 转成 HTTP 代理。
 - `flaresolverr`：刷新 Cloudflare clearance。
 - `init-config`：幂等写入 `proxy_runtime` 默认配置。
-- `app`：启动 ChatGPT2API 主服务。
+- `app`：启动 SH-image 主服务。
 
 默认只让上游 OpenAI / ChatGPT 请求走稳定代理，账号邮箱、CPA 等辅助链路不会被强制接管。账号自身配置的代理优先级最高，其次是稳定代理运行时，再其次是显式代理和旧版全局代理。
 
-可在 `.env` 中调整端口和代理运行时参数，也可在后台设置页的「稳定代理运行时」面板手动保存、测试代理和测试 clearance。
+可在 `.env` 中调整端口和代理运行时参数，也可在后台设置页的「FlareSolverr」面板手动保存、测试代理和测试 clearance。
 
 ### 本地开发
 
 启动后端：
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
-cd chatgpt2api
+git clone https://github.com/Fun-lovingMrZhang/sh-image.git
+cd sh-image
 uv sync
 uv run main.py
 ```
@@ -66,18 +79,22 @@ uv run main.py
 启动前端：
 
 ```bash
-cd chatgpt2api/web
+cd sh-image/web
 bun install
 bun run dev
 ```
 
-后续更新新版本：
+后端默认运行在 `http://127.0.0.1:8000`。
+
+### 服务器更新
 
 ```bash
-docker pull ghcr.io/basketikun/chatgpt2api:latest
-docker-compose down
-docker-compose up -d
-
+cd /opt/sh-image
+git pull origin main
+# 普通模式
+docker compose up -d --build
+# WARP 代理模式
+docker compose -f docker-compose.warp.yml up -d --build
 ```
 
 ### 存储后端配置
@@ -105,37 +122,40 @@ environment:
 - 兼容 `POST /v1/images/edits` 图片编辑接口
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
-- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
-  `gpt-5-mini`
+- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini`
 - 支持通过 `n` 返回多张生成结果
 - 支持生成可编辑 PPT 文件
 - 支持生成可编辑 PSD 文件
-- 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用，模型别名为 `codex-gpt-image-2`，如有需要可自行在其他场景映射回
-  `gpt-image-2`，用于和官网画图区分；也就意味着同一账号会同时有官网和 Codex 两份生图额度
+- 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用
+
+### 认证密钥配额系统
+
+- 为每个 API Key 设置独立的调用配额（`quota`）和已用额度（`used`）
+- 前端图片页面实时显示剩余额度（如 `剩余 18 / 20`）
+- 每次图片生成/编辑自动扣减额度
+- 管理员密钥无配额限制
+- 接口：`GET /api/auth/me` 获取当前用户配额信息
 
 ### 在线画图功能
 
 - 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
-- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` 模型选择
+- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5` 等模型选择
 - 编辑模式支持参考图上传
 - 前端支持多图生成交互
 - 本地保存图片会话历史，支持回看、删除和清空
-- 支持服务端缓存图片URL
 - 图片生成进度追踪，超时后可继续等待
-- 图片懒加载与滚动位置记忆，优化大量图片场景性能
 
 ### 号池管理功能
 
-- 自动刷新账号邮箱、类型、额度和恢复时间（异步进度追踪）
+- 自动刷新账号邮箱、类型、额度和恢复时间
 - 轮询可用账号执行图片生成与图片编辑
 - 遇到 Token 失效类错误时自动剔除无效 Token
 - 定时检查限流账号并自动刷新
-- 支持密码重新登录恢复异常账号，刷新后可自动重登
+- 支持密码重新登录恢复异常账号
 - 支持网页端配置全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理
 - 支持 WARP / FlareSolverr 稳定代理运行时
 - 支持搜索、筛选、批量刷新、导出、手动编辑和清理账号
 - 支持四种导入方式：本地 CPA JSON 文件导入、远程 CPA 服务器导入、`sub2api` 服务器导入、`access_token` 导入
-- 支持在设置页配置 `sub2api` 服务器，筛选并批量导入其中的 OpenAI OAuth 账号
 
 ### 实验性 / 规划中
 
@@ -143,19 +163,30 @@ environment:
 
 ## 效果展示
 
-<table width="100%">
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/Jj8nfwwP/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/pqf235v/image-edit.png" alt="image edit" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/tPcqtVfd/chery-studio.png" alt="chery studio" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/PsT9YHBV/account-pool.png" alt="account pool" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/rRWLG08q/new-api.png" alt="new api" border="0"></td>
-  </tr>
-</table>
+> 图片待更新（品牌定制中）
+
+## 项目结构
+
+```
+sh-image/
+├── api/                    # API 路由层
+│   ├── ai.py              # 直接 AI 接口（chat/completions, images 等）
+│   ├── image_tasks.py     # 图片任务创建接口
+│   ├── system.py          # 系统接口（认证、设置、用户信息）
+│   └── support.py         # 认证与配额工具函数
+├── services/              # 业务逻辑层
+│   ├── auth_service.py    # 认证密钥管理（配额系统）
+│   ├── account_service.py # 号池管理
+│   └── ...
+├── web/                   # Next.js 前端
+│   └── src/
+│       ├── app/image/     # 图片生成页面
+│       ├── components/    # UI 组件（品牌: SH-image 万图生）
+│       └── lib/api.ts     # 前端 API 客户端
+├── docker-compose.yml         # 普通部署
+├── docker-compose.warp.yml    # WARP 代理部署
+└── config.json                # 主配置文件
+```
 
 ## API
 
@@ -187,6 +218,33 @@ curl http://localhost:8000/v1/models \
 
 <br>
 </details>
+</details>
+
+<details>
+<summary><code>GET /api/auth/me</code></summary>
+<br>
+
+获取当前认证密钥的配额信息（普通用户）。
+
+```bash
+curl http://localhost:8000/api/auth/me \
+  -H "Authorization: Bearer <auth-key>"
+```
+
+返回示例：
+
+```json
+{
+  "id": "abc123",
+  "name": "用户密钥",
+  "role": "user",
+  "quota": 20,
+  "used": 5,
+  "remaining": 15
+}
+```
+
+<br>
 </details>
 
 <details>
@@ -344,9 +402,13 @@ curl http://localhost:8000/v1/responses \
 </details>
 </details>
 
+## 致谢
+
+本项目基于 [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) 二次开发。
+
 ## 社区支持
 
-学 AI , 上 L 站：[LinuxDO](https://linux.do)
+- GitHub Issues: [sh-image Issues](https://github.com/Fun-lovingMrZhang/sh-image/issues)
 
 ## Contributors
 
