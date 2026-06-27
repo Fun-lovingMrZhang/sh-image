@@ -20,6 +20,10 @@ TASK_STATUS_ERROR = "error"
 TERMINAL_STATUSES = {TASK_STATUS_SUCCESS, TASK_STATUS_ERROR}
 UNFINISHED_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
 
+# 看门狗：running 状态超过此时间的任务自动标记为 error
+# 超时时间直接使用用户配置的 image_poll_timeout_secs
+_WATCHDOG_INTERVAL_SECS = 30  # 每 30 秒扫描一次
+
 
 def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -111,6 +115,7 @@ class ImageTaskService:
         self.retention_days_getter = retention_days_getter or (lambda: config.image_retention_days)
         self._lock = threading.RLock()
         self._tasks: dict[str, dict[str, Any]] = {}
+        self._watchdog_stop = threading.Event()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             self._tasks = self._load_locked()
@@ -118,6 +123,13 @@ class ImageTaskService:
             changed = self._cleanup_locked() or changed
             if changed:
                 self._save_locked()
+        # 启动后台看门狗线程，定期检测卡死的 running 任务
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop,
+            name="image-task-watchdog",
+            daemon=True,
+        )
+        self._watchdog_thread.start()
 
     def submit_generation(
         self,
@@ -248,11 +260,10 @@ class ImageTaskService:
         model: str,
     ) -> None:
         started = time.time()
-        self._update_task(key, status=TASK_STATUS_RUNNING, error="")
+        # 立即设置 started_ts，让前端在 SSE 阶段也能读秒
+        self._update_task(key, status=TASK_STATUS_RUNNING, error="", started_ts=started)
         # 创建进度回调，每个步骤完成后更新任务状态
         def progress_callback(step: str) -> None:
-            if step == "image_stream_resolve_start":
-                self._update_task(key, started_ts=time.time())
             self._update_task(key, progress=step)
         # 将进度回调添加到 payload 中（handler 会提取并传递给 ConversationRequest）
         payload_with_progress = {**payload, "progress_callback": progress_callback}
@@ -419,6 +430,49 @@ class ImageTaskService:
                 task["updated_at"] = _now_iso()
                 changed = True
         return changed
+
+    # ── 后台看门狗 ──────────────────────────────────────────────
+
+    def _watchdog_loop(self) -> None:
+        """后台看门狗：定期扫描并标记长时间处于 running 状态的任务为 error。"""
+        while not self._watchdog_stop.is_set():
+            self._watchdog_stop.wait(_WATCHDOG_INTERVAL_SECS)
+            try:
+                self._watchdog_check()
+            except Exception:
+                pass  # 看门狗自身不能抛异常
+
+    def _watchdog_check(self) -> None:
+        now = time.time()
+        # 每次检查都读取用户配置的超时时间，支持运行时动态修改
+        stale_secs = config.image_poll_timeout_secs
+        stale_tasks: list[str] = []
+        with self._lock:
+            for key, task in self._tasks.items():
+                if task.get("status") != TASK_STATUS_RUNNING:
+                    continue
+                # 优先用 updated_ts（最后状态更新时间），如果没有则用 created_ts
+                last_update = task.get("updated_ts") or task.get("created_ts")
+                if last_update and (now - last_update) > stale_secs:
+                    stale_tasks.append(key)
+            for key in stale_tasks:
+                task = self._tasks[key]
+                task_id = task.get("id", "?")
+                task["status"] = TASK_STATUS_ERROR
+                task["error"] = f"任务执行超过 {stale_secs} 秒超时，已被自动终止（可能是上游连接卡死）"
+                task["updated_at"] = _now_iso()
+                task["updated_ts"] = now
+                self._log_call(
+                    {"id": task.get("owner_id"), "name": "", "role": "user"},
+                    task.get("mode", "generate"),
+                    task.get("model", ""),
+                    task.get("created_ts") or now,
+                    f" [超时终止] task_id={task_id}",
+                    status="failed",
+                    error=task["error"],
+                )
+            if stale_tasks:
+                self._save_locked()
 
     def _cleanup_locked(self) -> bool:
         try:
