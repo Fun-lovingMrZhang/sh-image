@@ -48,6 +48,19 @@ function getStoredImageSrc(image: StoredImage) {
   return image.url || "";
 }
 
+// 将后端返回的图片 URL 转换为同源 URL，避免反向代理下内部地址无法访问的问题
+function toSameOriginUrl(imageUrl: string): string {
+  if (!imageUrl) return imageUrl;
+  try {
+    const parsed = new URL(imageUrl);
+    // 绝对 URL → 只取 pathname + search + hash，拼接当前 origin
+    return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    // 已经是相对路径
+    return imageUrl.startsWith("/") ? `${window.location.origin}${imageUrl}` : imageUrl;
+  }
+}
+
 async function downloadStoredImage(image: StoredImage, index: number) {
   let blob: Blob | null = null;
   try {
@@ -57,9 +70,7 @@ async function downloadStoredImage(image: StoredImage, index: number) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       blob = new Blob([bytes], { type: "image/png" });
     } else if (image.url) {
-      // 确保 URL 是绝对路径
-      const url = image.url.startsWith("http") ? image.url : `${window.location.origin}${image.url}`;
-      const res = await fetch(url);
+      const res = await fetch(toSameOriginUrl(image.url));
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -69,9 +80,8 @@ async function downloadStoredImage(image: StoredImage, index: number) {
     }
   } catch (err) {
     console.error("Failed to download image:", err);
-    // 如果 fetch 失败，尝试直接在新窗口打开
     if (image.url) {
-      window.open(image.url, "_blank");
+      window.open(toSameOriginUrl(image.url), "_blank");
     }
     return;
   }

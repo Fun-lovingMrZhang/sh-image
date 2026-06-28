@@ -171,8 +171,19 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
   };
 }
 
+// 将后端返回的图片 URL 转换为同源 URL，避免反向代理下内部地址无法访问的问题
+function toSameOriginUrl(imageUrl: string): string {
+  if (!imageUrl) return imageUrl;
+  try {
+    const parsed = new URL(imageUrl);
+    return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return imageUrl.startsWith("/") ? `${window.location.origin}${imageUrl}` : imageUrl;
+  }
+}
+
 async function fetchImageAsFile(url: string, fileName: string) {
-  const response = await fetch(url);
+  const response = await fetch(toSameOriginUrl(url));
   if (!response.ok) {
     throw new Error("读取结果图失败");
   }
