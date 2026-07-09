@@ -286,10 +286,17 @@ class ImageTaskService:
                 raise error
             usage = result.get("usage")
             duration_ms = int((time.time() - started) * 1000)
-            self._update_task(key, status=TASK_STATUS_SUCCESS, data=data, usage=usage, error="", duration_ms=duration_ms)
-            # 成功后才扣减用户额度
-            from api.support import use_user_quota
-            use_user_quota(identity)
+            # 检查任务是否已被看门狗标记为超时/错误（竞态条件保护）
+            already_errored = False
+            with self._lock:
+                current_task = self._tasks.get(key)
+                if current_task and current_task.get("status") == TASK_STATUS_ERROR:
+                    already_errored = True
+            if not already_errored:
+                self._update_task(key, status=TASK_STATUS_SUCCESS, data=data, usage=usage, error="", duration_ms=duration_ms)
+                # 成功后才扣减用户额度
+                from api.support import use_user_quota
+                use_user_quota(identity)
             self._log_call(
                 identity,
                 mode,
