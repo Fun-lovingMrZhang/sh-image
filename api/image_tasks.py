@@ -66,7 +66,6 @@ def create_router() -> APIRouter:
                 quality=body.quality,
                 base_url=resolve_image_base_url(request),
             )
-            use_user_quota(identity)
             return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
@@ -100,7 +99,6 @@ def create_router() -> APIRouter:
                 images=images,
                 masks=masks,
             )
-            use_user_quota(identity)
             return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc

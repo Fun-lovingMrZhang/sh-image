@@ -287,6 +287,9 @@ class ImageTaskService:
             usage = result.get("usage")
             duration_ms = int((time.time() - started) * 1000)
             self._update_task(key, status=TASK_STATUS_SUCCESS, data=data, usage=usage, error="", duration_ms=duration_ms)
+            # 成功后才扣减用户额度
+            from api.support import use_user_quota
+            use_user_quota(identity)
             self._log_call(
                 identity,
                 mode,

@@ -96,12 +96,15 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         check_user_quota(identity)
-        use_user_quota(identity)
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
         await filter_or_log(call, body.prompt)
-        return await call.run(openai_v1_image_generations.handle, payload)
+        result = await call.run(openai_v1_image_generations.handle, payload)
+        # 只在生成成功时扣减用户额度
+        if isinstance(result, dict) and not result.get("error"):
+            use_user_quota(identity)
+        return result
 
     @router.post("/v1/images/edits")
     async def edit_images(
@@ -110,7 +113,6 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         check_user_quota(identity)
-        use_user_quota(identity)
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         prompt = str(payload["prompt"])
         model = str(payload["model"])
@@ -120,7 +122,11 @@ def create_router() -> APIRouter:
         if mask_sources:
             payload["mask"] = await read_image_sources(mask_sources)
         payload["base_url"] = resolve_image_base_url(request)
-        return await call.run(openai_v1_image_edit.handle, payload)
+        result = await call.run(openai_v1_image_edit.handle, payload)
+        # 只在生成成功时扣减用户额度
+        if isinstance(result, dict) and not result.get("error"):
+            use_user_quota(identity)
+        return result
 
     @router.post("/v1/chat/completions")
     async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
