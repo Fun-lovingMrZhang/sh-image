@@ -357,9 +357,10 @@ class AccountService:
 
     def _request_access_token_refresh(self, refresh_token: str, account: dict | None = None) -> dict[str, str]:
         from curl_cffi import requests
+        from curl_cffi.curl import CurlHttpVersion
         from services.proxy_service import proxy_settings
 
-        session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True, http_version="HTTP1.1"))
+        session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True, http_version=CurlHttpVersion.V1_1))
         try:
             response = session.post(
                 self._OAUTH_TOKEN_URL,
@@ -598,7 +599,8 @@ class AccountService:
         user_agent = self._OAUTH_USER_AGENT
         
         # 创建 session
-        session_kwargs = {"impersonate": "chrome110", "verify": False, "http_version": "HTTP1.1"}
+        from curl_cffi.curl import CurlHttpVersion
+        session_kwargs = {"impersonate": "chrome110", "verify": False, "http_version": CurlHttpVersion.V1_1}
         proxy = config.get_proxy_settings()
         if proxy:
             session_kwargs["proxy"] = proxy

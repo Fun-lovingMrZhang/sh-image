@@ -251,8 +251,9 @@ def _normalize_string_list(value: Any) -> list[str]:
 
 
 def _create_session(conf: dict):
+    from curl_cffi.curl import CurlHttpVersion
     proxy = str(conf.get("proxy") or "").strip()
-    kwargs = {"impersonate": "chrome", "verify": False, "http_version": "HTTP1.1"}
+    kwargs = {"impersonate": "chrome", "verify": False, "http_version": CurlHttpVersion.V1_1}
     if proxy:
         kwargs["proxy"] = proxy
     return requests.Session(**kwargs)

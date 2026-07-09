@@ -253,12 +253,13 @@ def build_sentinel_token(session: requests.Session, device_id: str, flow: str) -
 
 
 def create_session(proxy: str = "") -> Any:
+    from curl_cffi.curl import CurlHttpVersion
     kwargs = proxy_settings.build_session_kwargs(
         proxy=proxy,
         upstream=True,
         impersonate="chrome",
         verify=False,
-        http_version="HTTP1.1",
+        http_version=CurlHttpVersion.V1_1,
     )
     return requests.Session(**kwargs)
 
