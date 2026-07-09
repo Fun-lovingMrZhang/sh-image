@@ -140,7 +140,7 @@ class CloudflareR2Client:
         self.secret_access_key = _clean(settings.get("secret_access_key"))
         self.bucket = _clean(settings.get("bucket"))
         self.prefix = _clean(settings.get("prefix")) or "backups"
-        self.session = requests.Session(impersonate="chrome", verify=True)
+        self.session = requests.Session(impersonate="chrome", verify=True, http_version="HTTP1.1")
 
     def validate(self) -> None:
         missing = []

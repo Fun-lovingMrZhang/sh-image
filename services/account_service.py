@@ -359,7 +359,7 @@ class AccountService:
         from curl_cffi import requests
         from services.proxy_service import proxy_settings
 
-        session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True))
+        session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True, http_version="HTTP1.1"))
         try:
             response = session.post(
                 self._OAUTH_TOKEN_URL,
@@ -598,7 +598,7 @@ class AccountService:
         user_agent = self._OAUTH_USER_AGENT
         
         # 创建 session
-        session_kwargs = {"impersonate": "chrome110", "verify": False}
+        session_kwargs = {"impersonate": "chrome110", "verify": False, "http_version": "HTTP1.1"}
         proxy = config.get_proxy_settings()
         if proxy:
             session_kwargs["proxy"] = proxy

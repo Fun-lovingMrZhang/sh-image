@@ -171,6 +171,7 @@ class OpenAIBackendAPI:
             account=self.account,
             impersonate=self.fp["impersonate"],
             verify=True,
+            http_version="HTTP1.1",
         ))
         self.session.headers.update({
             "User-Agent": self.user_agent,

@@ -258,6 +258,7 @@ def create_session(proxy: str = "") -> Any:
         upstream=True,
         impersonate="chrome",
         verify=False,
+        http_version="HTTP1.1",
     )
     return requests.Session(**kwargs)
 

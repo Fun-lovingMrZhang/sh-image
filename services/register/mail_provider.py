@@ -252,7 +252,7 @@ def _normalize_string_list(value: Any) -> list[str]:
 
 def _create_session(conf: dict):
     proxy = str(conf.get("proxy") or "").strip()
-    kwargs = {"impersonate": "chrome", "verify": False}
+    kwargs = {"impersonate": "chrome", "verify": False, "http_version": "HTTP1.1"}
     if proxy:
         kwargs["proxy"] = proxy
     return requests.Session(**kwargs)
