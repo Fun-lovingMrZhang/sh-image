@@ -1263,7 +1263,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               const timeoutTask = taskList.items.find(
                 (task) =>
                   task.status === "error" &&
-                  task.error?.includes("超时") &&
+                  (task.error?.includes("超时") || task.error?.includes("timed out") || task.error?.includes("timeout")) &&
                   task.conversation_id &&
                   !retryingTaskIdsRef.has(task.id),
               );

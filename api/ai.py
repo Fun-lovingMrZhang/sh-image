@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
@@ -100,7 +102,16 @@ def create_router() -> APIRouter:
         payload["base_url"] = resolve_image_base_url(request)
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
         await filter_or_log(call, body.prompt)
-        result = await call.run(openai_v1_image_generations.handle, payload)
+        # 服务端超时100秒，比 Cloudflare 120秒 Proxy Read Timeout 短，
+        # 确保在 Cloudflare 断开前返回504，避免客户端收到524不明错误
+        try:
+            result = await asyncio.wait_for(call.run(openai_v1_image_generations.handle, payload), timeout=100)
+        except asyncio.TimeoutError:
+            call.log("调用超时", status="failed", error="服务端生图超过100秒，请使用异步任务接口 /api/image-tasks/generations")
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "image generation timed out (100s); use /api/image-tasks/generations for long-running requests"},
+            )
         # 只在生成成功时扣减用户额度
         if isinstance(result, dict) and not result.get("error"):
             use_user_quota(identity)
@@ -122,7 +133,14 @@ def create_router() -> APIRouter:
         if mask_sources:
             payload["mask"] = await read_image_sources(mask_sources)
         payload["base_url"] = resolve_image_base_url(request)
-        result = await call.run(openai_v1_image_edit.handle, payload)
+        try:
+            result = await asyncio.wait_for(call.run(openai_v1_image_edit.handle, payload), timeout=100)
+        except asyncio.TimeoutError:
+            call.log("调用超时", status="failed", error="服务端图生图超过100秒，请使用异步任务接口 /api/image-tasks/edits")
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "image edit timed out (100s); use /api/image-tasks/edits for long-running requests"},
+            )
         # 只在生成成功时扣减用户额度
         if isinstance(result, dict) and not result.get("error"):
             use_user_quota(identity)

@@ -248,7 +248,15 @@ class ImageTaskService:
                 name=f"image-task-{task_id[:16]}",
                 daemon=True,
             )
-            thread.start()
+            try:
+                thread.start()
+            except Exception as exc:
+                # 线程启动失败时立即将任务标记为 error，避免永远停在 queued
+                self._update_task(
+                    key,
+                    status=TASK_STATUS_ERROR,
+                    error=f"任务线程启动失败: {exc}",
+                )
         return _public_task(task)
 
     def _run_task(
@@ -456,20 +464,31 @@ class ImageTaskService:
         now = time.time()
         # 每次检查都读取用户配置的超时时间，支持运行时动态修改
         stale_secs = config.image_poll_timeout_secs
+        # queued 状态超时阈值更短：排队 60 秒仍未变为 running 说明线程启动失败
+        queued_stale_secs = max(60, stale_secs // 2)
         stale_tasks: list[str] = []
         with self._lock:
             for key, task in self._tasks.items():
-                if task.get("status") != TASK_STATUS_RUNNING:
-                    continue
-                # 优先用 updated_ts（最后状态更新时间），如果没有则用 created_ts
-                last_update = task.get("updated_ts") or task.get("created_ts")
-                if last_update and (now - last_update) > stale_secs:
-                    stale_tasks.append(key)
+                status = task.get("status")
+                if status == TASK_STATUS_RUNNING:
+                    # running 状态：用 updated_ts（最后状态更新时间）判断
+                    last_update = task.get("updated_ts") or task.get("created_ts")
+                    if last_update and (now - last_update) > stale_secs:
+                        stale_tasks.append(key)
+                elif status == TASK_STATUS_QUEUED:
+                    # queued 状态：用 created_ts（创建时间）判断，超时说明线程未启动
+                    created_ts = task.get("created_ts")
+                    if created_ts and (now - created_ts) > queued_stale_secs:
+                        stale_tasks.append(key)
             for key in stale_tasks:
                 task = self._tasks[key]
                 task_id = task.get("id", "?")
+                task_status = task.get("status")
+                if task_status == TASK_STATUS_QUEUED:
+                    task["error"] = f"任务排队超过 {queued_stale_secs} 秒仍未启动，可能是服务端线程异常，请重试"
+                else:
+                    task["error"] = f"任务执行超过 {stale_secs} 秒超时，已被自动终止（可能是上游连接卡死）"
                 task["status"] = TASK_STATUS_ERROR
-                task["error"] = f"任务执行超过 {stale_secs} 秒超时，已被自动终止（可能是上游连接卡死）"
                 task["updated_at"] = _now_iso()
                 task["updated_ts"] = now
                 self._log_call(
@@ -515,7 +534,8 @@ class ImageTaskService:
             if task.get("status") != TASK_STATUS_ERROR:
                 raise ValueError("task is not in error state")
             error_msg = _clean(task.get("error"))
-            if "超时" not in error_msg:
+            is_timeout = any(kw in error_msg for kw in ("超时", "timed out", "timeout", "仍未启动"))
+            if not is_timeout:
                 raise ValueError("task error is not a timeout error")
             conversation_id = _clean(task.get("conversation_id"))
             if not conversation_id:

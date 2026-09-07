@@ -75,7 +75,19 @@ class LogService:
         if not self.path.exists():
             return []
         items: list[dict[str, Any]] = []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
+        # 使用尾部读取避免大文件一次性加载到内存
+        try:
+            file_size = self.path.stat().st_size
+            # 最多读取末尾 4MB，足够容纳 200 条日志
+            max_read = 4 * 1024 * 1024
+            with self.path.open("r", encoding="utf-8") as f:
+                if file_size > max_read:
+                    f.seek(file_size - max_read)
+                    # 跳过第一个不完整的行
+                    f.readline()
+                lines = f.read().splitlines()
+        except Exception:
+            return []
         for line_number in range(len(lines) - 1, -1, -1):
             item = self._parse_line(lines[line_number], line_number)
             if item is None:
@@ -91,18 +103,23 @@ class LogService:
         target_ids = {str(item or "").strip() for item in ids if str(item or "").strip()}
         if not self.path.exists() or not target_ids:
             return {"removed": 0}
-        lines = self.path.read_text(encoding="utf-8").splitlines()
+        # 流式逐行读取，避免大文件一次性加载
         kept_lines: list[str] = []
         removed = 0
-        for line_number, raw_line in enumerate(lines):
-            item = self._parse_line(raw_line, line_number)
-            if item is None:
-                kept_lines.append(raw_line)
-                continue
-            if str(item.get("id") or "") in target_ids:
-                removed += 1
-                continue
-            kept_lines.append(self._serialize_item(item))
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                for line_number, raw_line in enumerate(f):
+                    raw_line = raw_line.rstrip("\n")
+                    item = self._parse_line(raw_line, line_number)
+                    if item is None:
+                        kept_lines.append(raw_line)
+                        continue
+                    if str(item.get("id") or "") in target_ids:
+                        removed += 1
+                        continue
+                    kept_lines.append(self._serialize_item(item))
+        except Exception:
+            return {"removed": 0}
         content = "\n".join(kept_lines)
         if content:
             content += "\n"
