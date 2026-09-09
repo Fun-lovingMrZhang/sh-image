@@ -300,6 +300,14 @@ function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> 
     if (hasRunning) {
       return { status: "generating", error: undefined };
     }
+    // 如果图片已有 taskId（任务已提交到后端），即使 taskStatus 还是 queued，
+    // 也应视为 generating——后端线程可能已启动但首次轮询因网络问题未收到状态更新
+    const hasSubmitted = turn.images.some(
+      (image) => image.status === "loading" && image.taskId && image.taskStatus !== undefined,
+    );
+    if (hasSubmitted) {
+      return { status: "generating", error: undefined };
+    }
     return { status: turn.status === "queued" ? "queued" : "generating", error: undefined };
   }
   if (failedCount > 0) {
